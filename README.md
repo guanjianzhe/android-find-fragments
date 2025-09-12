@@ -21,7 +21,7 @@
 - 如在本仓库新增 Action 或 Service，请同步更新 `plugin.xml` 与相应单元测试。
 
 ## 命令行工具：快速查找当前页面 Fragment
-- 命令：`aff`（别名）或 `find-fragments`
+- 命令：`acf`
 - 功能：
   - 自动通过 ADB 获取当前前台 Activity 以及其包含的 Fragment 列表；
   - 在终端输出可点击的本地源码文件路径；支持交互选择或一键打开文件。
@@ -30,12 +30,12 @@
   - 连接且已授权的真机/模拟器；
   - 将源码所在目录作为检索根目录（默认当前目录，可通过 `--search-roots` 指定，逗号分隔）。
 - 用法示例：
-  - `aff`
-  - `aff --device emulator-5554`
-  - `aff --search-roots /path/to/app,./external`
-  - `aff --adb /Users/me/Library/Android/sdk/platform-tools/adb`
-  - `aff --open`（交互选择并打开）
-  - `aff --open-all`（打开所有定位到的文件）
+  - `acf`
+  - `acf --device emulator-5554`
+  - `acf --search-roots /path/to/app,./external`
+  - `acf --adb /Users/me/Library/Android/sdk/platform-tools/adb`
+  - `acf --open`（交互选择并打开）
+  - `acf --open-all`（打开所有定位到的文件）
 
 ## 测试
 - 运行：`python3 -m unittest tools/tests/test_parsers.py`
@@ -43,13 +43,12 @@
 ## 安装与自动补全（推荐）
 - 使用 pipx 可编辑安装（开发期快速迭代）：
   - 在仓库根目录执行：`pipx install --editable .`
-  - 包名：`android-find-fragment`
-  - 安装后命令：`aff`（别名），也可使用 `find-fragments`
+  - 包名：`android-current-fragments`
+- 安装后命令：`acf`
 - 启用命令自动补全（argcomplete）：
   - Bash：
-    - `register-python-argcomplete aff >> ~/.bashrc && source ~/.bashrc`
+    - `register-python-argcomplete acf >> ~/.bashrc && source ~/.bashrc`
   - Zsh：
-    - 在 `~/.zshrc` 添加：`eval "$(register-python-argcomplete aff)"`，然后 `source ~/.zshrc`
-  - 如需同时为 `find-fragments` 启用补全，可同样注册该命令名。
+    - 在 `~/.zshrc` 添加：`eval "$(register-python-argcomplete acf)"`，然后 `source ~/.zshrc`
 - 运行示例：
-  - `aff --open --search-roots /path/to/app`
+  - `acf --open --search-roots /path/to/app`

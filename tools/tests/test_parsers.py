@@ -1,6 +1,6 @@
 import unittest
 
-from tools.aff_cli import (
+from tools.acf_cli import (
     parse_activity_component_from_dumpsys,
     parse_fragments_from_dumpsys,
 )
