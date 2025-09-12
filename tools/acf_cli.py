@@ -50,10 +50,12 @@ def android_version(adb: str, device: Optional[str]) -> Optional[int]:
 
 
 def parse_activity_component_from_dumpsys(text: str, prefer_top: bool) -> str:
+    """Extract the ``package/activity`` component from ``dumpsys`` output."""
     keys = ["topResumedActivity", "mResumedActivity"] if prefer_top else ["mResumedActivity", "topResumedActivity"]
     for line in text.splitlines():
         for key in keys:
             if key in line:
+                # Match lines like "topResumedActivity: com.foo/.MainActivity"
                 m = re.search(r"([A-Za-z0-9_$.]+)/([A-Za-z0-9_$.]+)", line)
                 if m:
                     return f"{m.group(1)}/{m.group(2)}"
@@ -61,6 +63,7 @@ def parse_activity_component_from_dumpsys(text: str, prefer_top: bool) -> str:
 
 
 def parse_fragments_from_dumpsys(text: str) -> List[str]:
+    """Return fragment class names listed under the ``Added Fragments`` section."""
     frags: List[str] = []
     in_added = False
     for raw in text.splitlines():
@@ -69,16 +72,25 @@ def parse_fragments_from_dumpsys(text: str) -> List[str]:
             in_added = True
             continue
         if in_added:
-            if s.startswith(("Removed Fragments:", "AutofillManager:", "Back Stack:", "Loaders:", "FragmentManager state:")):
+            if s.startswith((
+                "Removed Fragments:",
+                "AutofillManager:",
+                "Back Stack:",
+                "Loaders:",
+                "FragmentManager state:",
+            )):
                 break
+            # Primary pattern: "#0: com.foo.MyFragment"
             m = re.match(r"#\d+[:]?[\s]+([A-Za-z0-9_$.]+)", s)
             if not m:
+                # Fallback with extra leading markers, e.g., " # #0: ..."
                 m = re.match(r"#?\s*#\d+[:]?[\s]+([A-Za-z0-9_$.]+)", s)
             if m:
                 name = m.group(1).split(".")[-1]
                 if name not in frags:
                     frags.append(name)
     if not frags:
+        # Some Android versions truncate the section; walk backward to salvage names
         for raw in reversed(text.splitlines()):
             s = raw.strip()
             if s.startswith("Added Fragments:"):
@@ -90,6 +102,7 @@ def parse_fragments_from_dumpsys(text: str) -> List[str]:
                     frags.append(name)
             if s.startswith("AutofillManager:"):
                 break
+    # Filter out framework fragments that are always present and not user-defined
     noise = {"ReportFragment", "SupportRequestManagerFragment", "AutofillManager"}
     return [f for f in frags if f not in noise]
 
@@ -137,28 +150,39 @@ def open_file(path: str, editor_cmd: Optional[List[str]] = None) -> None:
 
 
 def find_sources_for_classnames(classnames: Iterable[str], roots: List[str]) -> List[Tuple[str, Optional[str]]]:
-    targets = {name: None for name in classnames}
+    """Search ``roots`` for Kotlin/Java files matching ``classnames``."""
+    targets = {name: None for name in classnames}  # map class name -> resolved path
     wanted = {f"{name}.kt" for name in classnames} | {f"{name}.java" for name in classnames}
     for root in roots:
         if not os.path.isdir(root):
             continue
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in {".git", ".gradle", "build", "out", "node_modules", "venv", "__pycache__"}]
+            # Skip common build or VCS directories to reduce noise
+            dirnames[:] = [
+                d
+                for d in dirnames
+                if d not in {".git", ".gradle", "build", "out", "node_modules", "venv", "__pycache__"}
+            ]
             for fn in filenames:
                 if fn in wanted:
                     cls = fn.rsplit(".", 1)[0]
                     if targets.get(cls) is None:
                         targets[cls] = os.path.abspath(os.path.join(dirpath, fn))
         if all(v is not None for v in targets.values()):
-            break
+            break  # stop searching once all classes are resolved
     return [(k, targets[k]) for k in classnames]
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Find current Android Activity and Fragments, map to local source files, and optionally open them.")
+    parser = argparse.ArgumentParser(
+        description="Find current Android Activity and Fragments, map to local source files, and optionally open them."
+    )
     parser.add_argument("--adb", help="Path to adb (default: use 'adb' in PATH)", default=os.environ.get("ADB", "adb"))
     parser.add_argument("--device", help="ADB device serial (default: auto, requires 0 or 1 device)")
-    parser.add_argument("--search-roots", help="Comma-separated source roots to search for classes (default: current directory)")
+    parser.add_argument(
+        "--search-roots",
+        help="Comma-separated source roots to search for classes (default: current directory)",
+    )
     parser.add_argument("--open", action="store_true", help="交互选择并打开定位到的文件")
     parser.add_argument("--open-all", action="store_true", help="打开所有已定位到的文件")
     parser.add_argument("--editor", help="自定义打开命令，例如 'code' 或 '/Applications/IntelliJ IDEA.app'", default=None)
