@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling>=1.17.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "android-find-fragment"
+version = "0.1.0"
+description = "CLI to find current Android Activity and its Fragments via ADB and open source files."
+readme = "READMED.md"
+requires-python = ">=3.8"
+authors = [{ name = "Your Name" }]
+dependencies = [
+  "argcomplete>=2.0.0",
+]
+
+[project.scripts]
+find-fragments = "tools.aff_cli:cli"
+aff = "tools.aff_cli:cli"
+
+[tool.hatch.build]
+packages = ["tools"]
+include = ["tools/**"]

@@ -1,0 +1,42 @@
+# External referenced repositories
+external/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-wheel-metadata/
+.venv/
+.venv*/
+venv/
+env/
+.env
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.cache/
+
+# JetBrains / Gradle
+.idea/
+*.iml
+.gradle/
+build/
+out/
+sandbox/
+
+# Editors
+.vscode/
+
+# OS
+.DS_Store
+
+# Node
+node_modules/
+
+# Logs
+*.log
