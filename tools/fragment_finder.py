@@ -9,10 +9,8 @@ from .parsers import parse_fragments, parse_fragments_strict
 def find_fragments_for_activity(adb: str, device: Optional[str], component: str) -> List[str]:
     """Find fragments for a specific activity component.
     
-    Uses multiple strategies to find fragments:
-    1. Direct component dumpsys (most precise)
-    2. Package-level dumpsys (fallback)
-    3. Full activity dumpsys with strict filtering (last resort)
+    Uses the most precise method: direct activity dumpsys with strict parsing.
+    This ensures we only get fragments from the current activity, not other activities.
     
     Args:
         adb: Path to adb executable
@@ -24,30 +22,19 @@ def find_fragments_for_activity(adb: str, device: Optional[str], component: str)
     """
     package = component.split("/", 1)[0]
     
-    # Strategy 1: Direct component dumpsys - most precise
+    # Use direct activity dumpsys - most precise method
     try:
         dump = get_activity_dump(adb, device, component)
         if dump.strip():
-            fragments = parse_fragments(dump, package_hint=package)
+            fragments = parse_fragments_strict(dump, component, package)
             if fragments:
                 return fragments
     except Exception:
         pass
     
-    # Strategy 2: Package-level dumpsys - good fallback
+    # Fallback: try package-level dumpsys
     try:
         dump = get_package_dump(adb, device, package)
-        if dump.strip():
-            fragments = parse_fragments(dump, package_hint=package)
-            if fragments:
-                return fragments
-    except Exception:
-        pass
-    
-    # Strategy 3: Full activity dumpsys with strict filtering - last resort
-    try:
-        from .adb_client import get_activities_dump
-        dump = get_activities_dump(adb, device)
         if dump.strip():
             fragments = parse_fragments_strict(dump, component, package)
             if fragments:

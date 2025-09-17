@@ -27,7 +27,8 @@ SYSTEM_FRAGMENTS = {
     "WebViewFragment",
     "Fragment",
     "androidx.fragment.app.Fragment",
-    "android.app.Fragment"
+    "android.app.Fragment",
+    "androidx.lifecycle.LifecycleDispatcher.report_fragment_tag"
 }
 
 # Activity parsing keys

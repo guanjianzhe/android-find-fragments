@@ -86,60 +86,81 @@ def parse_fragments(dumpsys_text: str, package_hint: Optional[str] = None) -> Li
 def parse_fragments_strict(dumpsys_text: str, component: str, package_hint: str) -> List[str]:
     """Parse fragments with strict filtering to avoid other activities' fragments.
     
-    This is used when parsing the full activity dumpsys output to ensure
-    we only get fragments from the current activity, not other activities.
+    This implementation is based on the external plugin's approach:
+    1. Parse lines in reverse order to find the most recent activity
+    2. Use a flag-based approach to ensure we only parse fragments from the current activity
+    3. Filter out system fragments and invalid names
     """
     lines = dumpsys_text.splitlines()
     fragments = []
+    flag = 0
     
-    # Find the section for our specific activity
-    activity_found = False
-    in_activity_section = False
-    
-    for i, line in enumerate(lines):
+    # Parse lines in reverse order (like the external plugin)
+    for line in reversed(lines):
         line_stripped = line.strip()
         
-        # Look for our activity in the dumpsys output
-        if component in line or f"{component.split('/')[-1]}" in line:
-            activity_found = True
-            in_activity_section = True
+        # Check for fragment section markers
+        if line_stripped.startswith("Added Fragments:"):
+            flag = 1
             continue
         
-        # If we're in our activity's section, look for fragment information
-        if in_activity_section and activity_found:
-            # Check for fragment sections
-            if any(line_stripped.startswith(anchor) for anchor in FRAGMENT_ANCHORS):
-                # Parse fragments in this section
-                j = i + 1
-                while j < len(lines):
-                    current_line = lines[j].strip()
-                    if not current_line:
-                        break
-                    if any(current_line.startswith(x) for x in (
-                        *FRAGMENT_STOPPERS,
-                        "Activity #", "Task #", "Stack #"
-                    )):
-                        break
-                    
-                    fragment_name = _extract_fragment_name(current_line)
-                    if fragment_name and fragment_name not in fragments:
-                        fragments.append(fragment_name)
-                    j += 1
+        # If we're in fragment parsing mode (flag == 1)
+        if flag == 1:
+            # Check for lines starting with # followed by digits (fragment entries)
+            if (line_stripped.startswith("#") and 
+                line_stripped[1:].strip() and
+                line_stripped[1:].strip()[0].isdigit()):
                 
-                # If we found fragments, we can stop looking
-                if fragments:
-                    break
+                # Extract fragment name from line like "#0: com.example.Fragment{123456}"
+                fragment_name = _extract_fragment_name_from_line(line_stripped)
+                if fragment_name and fragment_name not in fragments:
+                    fragments.append(fragment_name)
             
-            # If we hit another activity or task, we're done with our activity's section
+            # Stop parsing if we hit a stopper
+            elif any(line_stripped.startswith(stop) for stop in FRAGMENT_STOPPERS):
+                break
+            
+            # Stop parsing if we hit another activity or section
             elif (line_stripped.startswith("Activity #") or 
                   line_stripped.startswith("Task #") or 
                   line_stripped.startswith("Stack #") or
                   (line_stripped and not line_stripped.startswith(" ") and not line_stripped.startswith("\t"))):
-                in_activity_section = False
                 break
     
-    # Filter out system fragments
+    # Filter out system fragments and return
     return [f for f in fragments if f not in SYSTEM_FRAGMENTS and len(f) > 0]
+
+
+def _extract_fragment_name_from_line(line: str) -> Optional[str]:
+    """Extract fragment class name from a dumpsys line.
+    
+    Handles format like "#0: com.example.app.ui.HomeFragment{123456}"
+    """
+    line = line.strip()
+    if not line or not line.startswith("#"):
+        return None
+    
+    # Remove the #index part
+    content = line[1:].strip()
+    if content.startswith(":"):
+        content = content[1:].strip()
+    
+    # Find the first space to get the class name
+    space_idx = content.find(" ")
+    if space_idx > 0:
+        class_name = content[:space_idx]
+    else:
+        class_name = content
+    
+    # Extract just the class name (last part after dots)
+    if "." in class_name:
+        class_name = class_name.split(".")[-1]
+    
+    # Check if it's a valid fragment name
+    if _is_valid_fragment_name(class_name):
+        return class_name
+    
+    return None
 
 
 def _extract_fragment_name(line: str) -> Optional[str]:
