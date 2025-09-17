@@ -1,0 +1,232 @@
+# SOLID 原则速记指南（Android/Kotlin 开发者版）
+
+**核心理念**：写出更可维护、可测试、可扩展的代码。
+
+每个原则的结构：**定义** → **常见问题** → **实战示例** → **重构建议**
+
+---
+
+## S - Single Responsibility（单一职责原则）
+
+### 定义
+一个类/模块只对一类变化负责。
+
+### 常见问题
+- `*Manager`/`*Utils` 巨无霸类
+- Activity 同时处理 UI、网络、DB、埋点
+- 修改任意一块需求都会影响到同一个类
+
+### 反例
+```kotlin
+class ChatActivity : AppCompatActivity() {
+    fun loadData() { /* retrofit 调接口 */ }
+    fun saveToDb() { /* Room */ }
+    fun renderUI() { /* UI 逻辑 */ }
+    fun trackPage() { /* 埋点 */ }
+}
+```
+
+### 重构建议
+- **拆分职责**：
+  - `ChatRepository`（数据层）
+  - `ChatRenderer`（UI 纯函数/Adapter 逻辑）
+  - `AnalyticsTracker`（埋点）
+- Activity 只做组装与转发
+- ViewModel 承担"状态+意图"，UI 只渲染
+
+---
+
+## O - Open/Closed（开闭原则）
+
+### 定义
+对扩展开放，对修改关闭。新增能力尽量通过扩展而非改动已有代码。
+
+### 常见问题
+- `when(type)` 到处开分支，新增类型要改一堆 when
+- Feature 切换靠 `if (x)` 到处散落
+
+### 反例
+```kotlin
+// 新增类型要改这儿
+fun render(message: Message) = when(message.type) {
+    TEXT -> TextRenderer().render(message)
+    IMAGE -> ImageRenderer().render(message)
+    // 新增 VIDEO 要来这里改
+}
+```
+
+### 更好的实现
+```kotlin
+interface MessageRenderer { 
+    fun render(m: Message) 
+}
+
+class TextRenderer : MessageRenderer { /* ... */ }
+class ImageRenderer : MessageRenderer { /* ... */ }
+
+class RendererRegistry(
+    private val map: Map<MessageType, MessageRenderer>
+) {
+    fun render(m: Message) = map.getValue(m.type).render(m)
+}
+// 新类型 → 新类 + 新注册，不改核心流程
+```
+
+**注意**：Kotlin sealed class 适合已知有限集合；需要"开放扩展"时更偏向接口 + 注册表/策略模式。
+
+---
+
+## L - Liskov Substitution（里氏替换原则）
+
+### 定义
+子类必须能在不破坏语义的情况下替换父类。
+
+### 常见问题
+- 子类把父类方法 `throw UnsupportedOperationException()`
+- 覆盖后改变"契约"导致调用方崩溃/语义混乱
+
+### 反例
+```kotlin
+open class MediaPlayer {
+    open fun play(url: String) { /* ... */ }
+    open fun seekTo(ms: Long) { /* ... */ }
+}
+
+class LivePlayer : MediaPlayer() {
+    override fun seekTo(ms: Long) { 
+        throw UnsupportedOperationException() // 违背 LSP
+    }
+}
+```
+
+### 重构建议
+用组合+接口分离而不是"假继承"：
+
+```kotlin
+interface Playable { 
+    fun play(url: String) 
+}
+
+interface Seekable { 
+    fun seekTo(ms: Long) 
+}
+
+class VodPlayer : Playable, Seekable { /* ... */ }
+class LivePlayer : Playable { /* ... */ } // 不实现 Seekable
+```
+
+---
+
+## I - Interface Segregation（接口隔离原则）
+
+### 定义
+多个专用小接口优于一个超大接口。
+
+### 常见问题
+- Repository 一个接口 20 个方法；实现类到处 `TODO()`
+- View 回调接口一坨方法，大多实现为空
+
+### 重构建议
+**按使用场景拆分**：
+
+```kotlin
+interface UserReadable { 
+    suspend fun getUser(id: Long): User 
+}
+
+interface UserWritable { 
+    suspend fun upsertUser(u: User) 
+}
+
+class UserRepository : UserReadable, UserWritable { /* ... */ }
+```
+
+**UI 回调优化**：拆成小接口或用单事件流（StateFlow/Channel）代替"回调大接口"。
+
+---
+
+## D - Dependency Inversion（依赖反转原则）
+
+### 定义
+高层模块依赖抽象，不依赖具体实现；细节实现依赖抽象。
+
+### 常见问题
+- 直接在 ViewModel 里 `Retrofit.Builder().build()`，或 new 出具体类
+- 代码难测：想替换网络层/假数据很痛苦
+
+### 重构建议（结合 Hilt/Koin）
+```kotlin
+interface ChatDataSource { 
+    suspend fun messages(): List<Message> 
+}
+
+class RemoteChatDataSource @Inject constructor(
+    private val api: ChatApi
+) : ChatDataSource { /* ... */ }
+
+@HiltViewModel
+class ChatViewModel @Inject constructor(
+    private val data: ChatDataSource // 依赖抽象
+) : ViewModel() { /* ... */ }
+```
+
+切换到本地/Mock 只需换绑定，不动高层业务。
+
+---
+
+## 违背 SOLID 的常见信号
+
+- ❌ "上帝类"/"工具类"越来越胖；任何需求改动都要动它（违反 SRP）
+- ❌ 到处 `when(type)`/`if(flag)` 分发（违反 OCP）
+- ❌ 子类关闭父类能力或改变语义（违反 LSP）
+- ❌ 接口里半数方法实现为空（违反 ISP）
+- ❌ 代码里大量 `new`/`Retrofit.Builder()`（违反 DIP）
+
+---
+
+## Android 项目落地架构
+
+### 分层结构
+```
+UI (Activity/Fragment/Compose) 
+    ↓ 
+ViewModel 
+    ↓ 
+UseCase 
+    ↓ 
+Repository 
+    ↓ 
+DataSource (Remote/Local)
+```
+
+### 实践要点
+- **SRP**：分层自然满足
+- **DIP**：用接口 + DI
+- **OCP**：策略/责任链/注册表替代 when 大开关
+- **ISP**：按读/写/监听拆分接口
+- **LSP**：更倾向组合，基类仅保留稳定"契约"
+- **测试**：高层只依赖接口，Mock/Fake 注入
+
+---
+
+## 30秒自检清单
+
+- [ ] 我这个类只关心一种变化吗？（SRP）
+- [ ] 新增一个类型/渠道，能不改原有类就接入吗？（OCP）
+- [ ] 子类/替代实现能无缝替换而不破坏调用方吗？（LSP）
+- [ ] 这个接口能拆小吗？调用方只依赖自己用到的部分吗？（ISP）
+- [ ] 高层是否只依赖抽象？是否能轻松注入假实现做测试？（DIP）
+
+---
+
+## 何时不要过度 SOLID
+
+⚠️ **适度原则**：
+- 早期小模块、一次性脚本、无需复用时，不必为"可扩展"牺牲可读性
+- `sealed class + when(exhaustive)` 的模式本身就是设计：类型是封闭的，OCP 不强求开放扩展
+
+---
+
+
+⸻
+
