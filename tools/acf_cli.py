@@ -62,66 +62,297 @@ def parse_activity_component_from_dumpsys(text: str, prefer_top: bool) -> str:
     raise RuntimeError("未在 dumpsys 中找到当前 Activity（mResumedActivity/topResumedActivity）。")
 
 
-def parse_fragments_from_dumpsys(text: str) -> List[str]:
-    """Return fragment class names listed under the ``Added Fragments`` section."""
+def parse_fragments_from_dumpsys(text: str, package_hint: Optional[str] = None) -> List[str]:
+    """Parse fragment names from ``dumpsys activity`` text.
+
+    Enhanced parsing based on external plugin implementations:
+    - Supports both "Added Fragments:" and "Active Fragments:" anchors
+    - Handles various Android versions and OEM variants
+    - More precise fragment extraction with proper state detection
+    - Filters out system/framework fragments
+    """
+    anchors = ("Added Fragments:", "Active Fragments:")
+    stoppers = (
+        "Removed Fragments:",
+        "AutofillManager:",
+        "Back Stack:",
+        "Loaders:",
+        "FragmentManager state:",
+        "Host callbacks:",
+        "FragmentManager:",
+        "View Hierarchy:",
+        "Window #",
+    )
+
+    lines = text.splitlines()
     frags: List[str] = []
-    in_added = False
-    for raw in text.splitlines():
-        s = raw.strip()
-        if not in_added and s.startswith("Added Fragments:"):
-            in_added = True
+    
+    # First pass: look for fragment sections with package gating
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if any(line.startswith(a) for a in anchors):
+            # Package gating: check if package is in vicinity
+            if package_hint:
+                # Look in the entire text for package name since package info might be at the beginning
+                if package_hint not in text:
+                    i += 1
+                    continue
+            
+            # Collect fragment lines until a stopper
+            j = i + 1
+            while j < len(lines):
+                current_line = lines[j].strip()
+                if not current_line:
+                    break
+                if any(current_line.startswith(x) for x in stoppers):
+                    break
+                
+                # Extract fragment name using more precise patterns
+                fragment_name = extract_fragment_name_from_line(current_line)
+                if fragment_name and fragment_name not in frags:
+                    frags.append(fragment_name)
+                j += 1
+            i = j
             continue
-        if in_added:
-            if s.startswith((
-                "Removed Fragments:",
-                "AutofillManager:",
-                "Back Stack:",
-                "Loaders:",
-                "FragmentManager state:",
-            )):
-                break
-            # Primary pattern: "#0: com.foo.MyFragment"
-            m = re.match(r"#\d+[:]?[\s]+([A-Za-z0-9_$.]+)", s)
-            if not m:
-                # Fallback with extra leading markers, e.g., " # #0: ..."
-                m = re.match(r"#?\s*#\d+[:]?[\s]+([A-Za-z0-9_$.]+)", s)
-            if m:
-                name = m.group(1).split(".")[-1]
-                if name not in frags:
-                    frags.append(name)
+        i += 1
+
+    # Second pass: fallback without package gating if no fragments found
     if not frags:
-        # Some Android versions truncate the section; walk backward to salvage names
-        for raw in reversed(text.splitlines()):
-            s = raw.strip()
-            if s.startswith("Added Fragments:"):
-                break
-            m = re.match(r"#\d+[:]?[\s]+([A-Za-z0-9_$.]+)", s)
-            if m:
-                name = m.group(1).split(".")[-1]
-                if name not in frags:
-                    frags.append(name)
-            if s.startswith("AutofillManager:"):
-                break
-    # Filter out framework fragments that are always present and not user-defined
-    noise = {"ReportFragment", "SupportRequestManagerFragment", "AutofillManager"}
-    return [f for f in frags if f not in noise]
+        for idx, line in enumerate(lines):
+            if any(line.strip().startswith(a) for a in anchors):
+                # Look ahead for fragment lines
+                for j in range(idx + 1, min(len(lines), idx + 30)):
+                    current_line = lines[j].strip()
+                    if not current_line:
+                        continue
+                    if any(current_line.startswith(x) for x in stoppers):
+                        break
+                    
+                    fragment_name = extract_fragment_name_from_line(current_line)
+                    if fragment_name and fragment_name not in frags:
+                        frags.append(fragment_name)
+                if frags:
+                    break
+
+    # Filter out system/framework fragments
+    system_fragments = {
+        "ReportFragment", "SupportRequestManagerFragment", "AutofillManager",
+        "DialogFragment", "ListFragment", "PreferenceFragment", "WebViewFragment",
+        "Fragment", "androidx.fragment.app.Fragment", "android.app.Fragment"
+    }
+    
+    return [f for f in frags if f not in system_fragments and len(f) > 0]
+
+
+def extract_fragment_name_from_line(line: str) -> Optional[str]:
+    """Extract fragment class name from a dumpsys line.
+    
+    Handles various formats:
+    - #0 com.example.app.ui.HomeFragment{123456}
+    - #1: com.example.app.ui.child.ChildFragment{abcdef}
+    - HomeFragment{123456}
+    - com.example.app.ui.TabFragment{000000}
+    """
+    line = line.strip()
+    if not line:
+        return None
+    
+    # Pattern 1: Lines starting with # followed by index
+    # #0 com.example.app.ui.HomeFragment{123456}
+    # #1: com.example.app.ui.child.ChildFragment{abcdef}
+    if line.startswith("#"):
+        # Remove the #index part
+        content = line[1:].strip()
+        if content.startswith(":"):
+            content = content[1:].strip()
+        
+        # Find the first space to get the class name
+        space_idx = content.find(" ")
+        if space_idx > 0:
+            class_name = content[:space_idx]
+        else:
+            class_name = content
+        
+        # Extract just the class name (last part after dots)
+        if "." in class_name:
+            class_name = class_name.split(".")[-1]
+        
+        # Check if it's a valid fragment name
+        if is_valid_fragment_name(class_name):
+            return class_name
+    
+    # Pattern 2: Direct class name with optional braces
+    # HomeFragment{123456}
+    # com.example.app.ui.TabFragment{000000}
+    if "Fragment" in line:
+        # Remove braces and content inside
+        clean_line = re.sub(r'\{[^}]*\}', '', line)
+        
+        # Split by spaces and find the fragment name
+        parts = clean_line.split()
+        for part in parts:
+            if "Fragment" in part:
+                # Extract class name (last part after dots)
+                class_name = part.split(".")[-1]
+                if is_valid_fragment_name(class_name):
+                    return class_name
+    
+    return None
+
+
+def is_valid_fragment_name(name: str) -> bool:
+    """Check if a name is a valid fragment class name."""
+    if not name or len(name) < 3:
+        return False
+    
+    # Must end with Fragment
+    if not name.endswith("Fragment"):
+        return False
+    
+    # Must start with uppercase letter
+    if not name[0].isupper():
+        return False
+    
+    # Should not contain special characters except underscores
+    if not re.match(r'^[A-Za-z][A-Za-z0-9_]*$', name):
+        return False
+    
+    # Filter out obvious system fragments
+    system_patterns = [
+        r'^.*Fragment$',  # Generic Fragment
+        r'^.*DialogFragment$',  # DialogFragment
+        r'^.*ListFragment$',  # ListFragment
+        r'^.*PreferenceFragment$',  # PreferenceFragment
+        r'^.*WebViewFragment$',  # WebViewFragment
+    ]
+    
+    for pattern in system_patterns:
+        if re.match(pattern, name) and name in {
+            "Fragment", "DialogFragment", "ListFragment", 
+            "PreferenceFragment", "WebViewFragment"
+        }:
+            return False
+    
+    return True
 
 
 def list_fragments_for_component(adb: str, device: Optional[str], component: str) -> List[str]:
+    """Get fragments for a specific activity component.
+    
+    Uses multiple strategies to find fragments:
+    1. Direct component dumpsys (most precise)
+    2. Package-level dumpsys (fallback)
+    3. Full activity dumpsys with strict filtering (last resort)
+    """
     outs: List[str] = []
+    pkg = component.split("/", 1)[0]
+    
+    # Strategy 1: Direct component dumpsys - most precise
     try:
-        outs.append(run(adb_cmd(adb, device, ["shell", "dumpsys", "activity", component])))
+        out = run(adb_cmd(adb, device, ["shell", "dumpsys", "activity", component]))
+        if out.strip():
+            outs.append(out)
     except Exception:
         pass
+    
+    # Strategy 2: Package-level dumpsys - good fallback
     try:
-        outs.append(run(adb_cmd(adb, device, ["shell", "dumpsys", "activity", component.split("/", 1)[0]])))
+        out = run(adb_cmd(adb, device, ["shell", "dumpsys", "activity", pkg]))
+        if out.strip():
+            outs.append(out)
     except Exception:
         pass
-    for text in outs:
-        fr = parse_fragments_from_dumpsys(text)
-        if fr:
-            return fr
+    
+    # Strategy 3: Full activity dumpsys with strict filtering - last resort
+    try:
+        out = run(adb_cmd(adb, device, ["shell", "dumpsys", "activity"]))
+        if out.strip():
+            outs.append(out)
+    except Exception:
+        pass
+    
+    # Parse fragments with increasing strictness
+    for i, text in enumerate(outs):
+        if i < 2:
+            # For direct component and package dumpsys, use less strict filtering
+            fr = parse_fragments_from_dumpsys(text, package_hint=pkg)
+            if fr:
+                return fr
+        else:
+            # For full activity dumpsys, use strict filtering to avoid other activities' fragments
+            fr = parse_fragments_from_dumpsys_strict(text, component, pkg)
+            if fr:
+                return fr
+    
     return []
+
+
+def parse_fragments_from_dumpsys_strict(text: str, component: str, package_hint: str) -> List[str]:
+    """Parse fragments with strict filtering to avoid other activities' fragments.
+    
+    This is used when parsing the full activity dumpsys output to ensure
+    we only get fragments from the current activity, not other activities.
+    """
+    lines = text.splitlines()
+    frags: List[str] = []
+    
+    # Find the section for our specific activity
+    activity_found = False
+    in_activity_section = False
+    
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
+        
+        # Look for our activity in the dumpsys output
+        if component in line or f"{component.split('/')[-1]}" in line:
+            activity_found = True
+            in_activity_section = True
+            continue
+        
+        # If we're in our activity's section, look for fragment information
+        if in_activity_section and activity_found:
+            # Check for fragment sections
+            if any(line_stripped.startswith(anchor) for anchor in ("Added Fragments:", "Active Fragments:")):
+                # Parse fragments in this section
+                j = i + 1
+                while j < len(lines):
+                    current_line = lines[j].strip()
+                    if not current_line:
+                        break
+                    if any(current_line.startswith(x) for x in (
+                        "Removed Fragments:", "AutofillManager:", "Back Stack:", 
+                        "Loaders:", "FragmentManager state:", "Host callbacks:",
+                        "FragmentManager:", "View Hierarchy:", "Window #",
+                        "Activity #", "Task #", "Stack #"
+                    )):
+                        break
+                    
+                    fragment_name = extract_fragment_name_from_line(current_line)
+                    if fragment_name and fragment_name not in frags:
+                        frags.append(fragment_name)
+                    j += 1
+                
+                # If we found fragments, we can stop looking
+                if frags:
+                    break
+            
+            # If we hit another activity or task, we're done with our activity's section
+            elif (line_stripped.startswith("Activity #") or 
+                  line_stripped.startswith("Task #") or 
+                  line_stripped.startswith("Stack #") or
+                  (line_stripped and not line_stripped.startswith(" ") and not line_stripped.startswith("\t"))):
+                in_activity_section = False
+                break
+    
+    # Filter out system/framework fragments
+    system_fragments = {
+        "ReportFragment", "SupportRequestManagerFragment", "AutofillManager",
+        "DialogFragment", "ListFragment", "PreferenceFragment", "WebViewFragment",
+        "Fragment", "androidx.fragment.app.Fragment", "android.app.Fragment"
+    }
+    
+    return [f for f in frags if f not in system_fragments and len(f) > 0]
 
 
 def default_open_cmd() -> Optional[List[str]]:
