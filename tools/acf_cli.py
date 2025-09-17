@@ -63,7 +63,7 @@ def setup_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--editor", 
-        help="自定义打开命令，例如 'code' 或 '/Applications/IntelliJ IDEA.app'", 
+        help="自定义打开命令，例如 'code'、'/Applications/Android Studio.app' 或 '/Applications/IntelliJ IDEA.app'", 
         default=None
     )
     

@@ -43,6 +43,12 @@ acf --open-all
 
 # 使用自定义编辑器
 acf --editor "code" --open
+
+# 使用 Android Studio 打开
+acf --editor "/Applications/Android Studio.app" --open
+
+# 使用 IntelliJ IDEA 打开
+acf --editor "/Applications/IntelliJ IDEA.app" --open
 ```
 
 ## 详细用法
@@ -56,7 +62,7 @@ acf --editor "code" --open
 | `--search-roots` | 源码搜索根目录（逗号分隔） | 当前目录 |
 | `--open` | 交互式选择并打开文件 | - |
 | `--open-all` | 打开所有找到的文件 | - |
-| `--editor` | 自定义编辑器命令 | 系统默认 |
+| `--editor` | 自定义编辑器命令（如：`code`、`/Applications/Android Studio.app`） | 系统默认 |
 
 ### 环境要求
 
