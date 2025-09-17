@@ -22,23 +22,25 @@ def open_file(file_path: str, editor_command: Optional[List[str]] = None) -> Non
     """Open a file with the specified editor command.
     
     Args:
-        file_path: Path to the file to open
+        file_path: Path to the file to open (supports ~ for home directory)
         editor_command: Optional custom editor command
     """
+    # Expand ~ to absolute path for file operations
+    expanded_path = os.path.expanduser(file_path)
     if sys.platform.startswith("win"):
         try:
-            os.startfile(file_path)  # type: ignore[attr-defined]
+            os.startfile(expanded_path)  # type: ignore[attr-defined]
             return
         except Exception:
             pass
-        subprocess.Popen(["cmd", "/c", "start", "", file_path], shell=False)
+        subprocess.Popen(["cmd", "/c", "start", "", expanded_path], shell=False)
         return
     
     cmd = editor_command or get_default_open_command()
     if not cmd:
         raise RuntimeError("无法确定打开文件的命令，请使用 --editor 指定。")
     
-    subprocess.Popen(cmd + [file_path])
+    subprocess.Popen(cmd + [expanded_path])
 
 
 def parse_editor_command(editor_string: Optional[str]) -> Optional[List[str]]:

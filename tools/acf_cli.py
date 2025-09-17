@@ -2,7 +2,7 @@
 """
 ACF CLI: 查找当前 Android Activity 与其包含的 Fragments，并定位本地源码文件。
 
-简洁实现：模块化设计，支持一键或交互打开文件。
+支持一键或交互打开文件。
 """
 
 import argparse
@@ -10,9 +10,15 @@ import os
 import sys
 from typing import List, Optional, Sequence, Tuple
 
+# 常量定义
+DEFAULT_ADB = "adb"
+CANCEL_COMMANDS = ('q', 'quit', 'exit', 'cancel')
+DEFAULT_CHOICE = "0"
+
+# 导入处理
 try:
     import argcomplete  # type: ignore
-except Exception:  # pragma: no cover
+except ImportError:
     argcomplete = None  # type: ignore
 
 try:
@@ -23,8 +29,6 @@ try:
     from .parsers import parse_activity_component
 except ImportError:
     # Fallback for direct execution
-    import sys
-    import os
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from tools.adb_client import get_android_version, get_connected_devices, get_activities_dump
     from tools.file_finder import find_source_files, get_activity_name
@@ -38,19 +42,25 @@ def setup_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Find current Android Activity and Fragments, map to local source files, and optionally open them."
     )
+    
+    # ADB 相关参数
     parser.add_argument(
         "--adb", 
         help="Path to adb (default: use 'adb' in PATH)", 
-        default=os.environ.get("ADB", "adb")
+        default=os.environ.get("ADB", DEFAULT_ADB)
     )
     parser.add_argument(
         "--device", 
         help="ADB device serial (default: auto, requires 0 or 1 device)"
     )
+    
+    # 搜索相关参数
     parser.add_argument(
         "--search-roots",
         help="Comma-separated source roots to search for classes (default: current directory)",
     )
+    
+    # 文件操作参数
     parser.add_argument(
         "--open", 
         action="store_true", 
@@ -67,14 +77,19 @@ def setup_argument_parser() -> argparse.ArgumentParser:
         default=None
     )
     
-    # Enable argcomplete if available
-    if argcomplete is not None:  # type: ignore
-        try:
-            argcomplete.autocomplete(parser)  # type: ignore
-        except Exception:
-            pass
+    # 启用自动补全
+    _enable_autocomplete(parser)
     
     return parser
+
+
+def _enable_autocomplete(parser: argparse.ArgumentParser) -> None:
+    """Enable argcomplete if available."""
+    if argcomplete:
+        try:
+            argcomplete.autocomplete(parser)
+        except Exception:
+            pass
 
 
 def validate_device(adb: str, device: Optional[str]) -> str:
@@ -82,21 +97,33 @@ def validate_device(adb: str, device: Optional[str]) -> str:
     devices = get_connected_devices(adb)
     
     if device is None:
-        if len(devices) == 0:
-            print("[错误] 未检测到设备，请连接设备并授权 ADB。", file=sys.stderr)
-            sys.exit(2)
-        if len(devices) > 1:
-            print("[错误] 检测到多个设备，请使用 --device 指定序列号：", file=sys.stderr)
-            for d in devices:
-                print(f"  - {d}", file=sys.stderr)
-            sys.exit(2)
-        return devices[0]
+        return _handle_auto_device_selection(devices)
     
     if device not in devices:
-        print(f"[错误] 设备 {device} 未连接或未授权。", file=sys.stderr)
+        _print_error(f"设备 {device} 未连接或未授权。")
         sys.exit(2)
     
     return device
+
+
+def _handle_auto_device_selection(devices: List[str]) -> str:
+    """Handle automatic device selection."""
+    if not devices:
+        _print_error("未检测到设备，请连接设备并授权 ADB。")
+        sys.exit(2)
+    
+    if len(devices) > 1:
+        _print_error("检测到多个设备，请使用 --device 指定序列号：")
+        for device in devices:
+            print(f"  - {device}", file=sys.stderr)
+        sys.exit(2)
+    
+    return devices[0]
+
+
+def _print_error(message: str) -> None:
+    """Print error message to stderr."""
+    print(f"[错误] {message}", file=sys.stderr)
 
 
 def get_current_activity(adb: str, device: str) -> str:
@@ -111,19 +138,36 @@ def display_results(activity_name: str, activity_path: Optional[str],
     """Display activity and fragment results, return indexed list."""
     indexed: List[Tuple[int, str, Optional[str]]] = []
     
+    # 显示 Activity
+    _display_activity(activity_name, activity_path, indexed)
+    
+    # 显示 Fragments
+    _display_fragments(fragments, indexed)
+    
+    return indexed
+
+
+def _display_activity(activity_name: str, activity_path: Optional[str], 
+                     indexed: List[Tuple[int, str, Optional[str]]]) -> None:
+    """Display activity information."""
     print("当前 Activity:")
     indexed.append((0, activity_name, activity_path))
-    print(f"  [0] {activity_name}: {activity_path if activity_path else '[未找到]，请调整 --search-roots 或确认源码存在'}")
-    
+    path = activity_path or '[未找到]，请调整 --search-roots 或确认源码存在'
+    print(f"  [0] {activity_name}: {path}")
+
+
+def _display_fragments(fragments: List[Tuple[str, Optional[str]]], 
+                      indexed: List[Tuple[int, str, Optional[str]]]) -> None:
+    """Display fragment information."""
     print("\n当前 Fragments:")
     if not fragments:
         print("  [无 Fragment]")
-    else:
-        for idx, (fragment_name, fragment_path) in enumerate(fragments, start=1):
-            indexed.append((idx, fragment_name, fragment_path))
-            print(f"  [{idx}] {fragment_name}: {fragment_path if fragment_path else '[未找到]，请调整 --search-roots 或确认源码存在'}")
+        return
     
-    return indexed
+    for idx, (name, path) in enumerate(fragments, start=1):
+        indexed.append((idx, name, path))
+        path_display = path or '[未找到]，请调整 --search-roots 或确认源码存在'
+        print(f"  [{idx}] {name}: {path_display}")
 
 
 def handle_file_opening(indexed: List[Tuple[int, str, Optional[str]]], 
@@ -131,74 +175,113 @@ def handle_file_opening(indexed: List[Tuple[int, str, Optional[str]]],
                        editor_command: Optional[str]) -> None:
     """Handle file opening based on user preferences."""
     if open_all:
-        editor_cmd = parse_editor_command(editor_command)
-        for _, _, path in indexed:
-            if path:
-                open_file(path, editor_cmd)
+        _open_all_files(indexed, editor_command)
+    elif open_interactive:
+        _open_interactive(indexed, editor_command)
+
+
+def _open_all_files(indexed: List[Tuple[int, str, Optional[str]]], 
+                   editor_command: Optional[str]) -> None:
+    """Open all available files."""
+    editor_cmd = parse_editor_command(editor_command)
+    for _, _, path in indexed:
+        if path:
+            open_file(path, editor_cmd)
+
+
+def _open_interactive(indexed: List[Tuple[int, str, Optional[str]]], 
+                     editor_command: Optional[str]) -> None:
+    """Handle interactive file selection."""
+    available = [(i, c, p) for (i, c, p) in indexed if p]
+    if not available:
+        print("[信息] 无可打开的文件。", file=sys.stderr)
         return
     
-    if open_interactive:
-        available = [(i, c, p) for (i, c, p) in indexed if p]
-        if not available:
-            print("[信息] 无可打开的文件。", file=sys.stderr)
-            return
-        
-        try:
-            choice = input("输入序号打开文件（0 为 Activity，回车取消）：").strip()
-        except EOFError:
-            choice = ""
-        
-        if choice:
-            try:
-                pick = int(choice)
-            except ValueError:
-                print("[错误] 无效的序号。", file=sys.stderr)
-                sys.exit(2)
-            
-            match = next(((i, c, p) for (i, c, p) in available if i == pick), None)
-            if not match:
-                print("[错误] 未找到对应序号。", file=sys.stderr)
-                sys.exit(2)
-            
-            _, _, path = match
-            editor_cmd = parse_editor_command(editor_command)
-            open_file(path or "", editor_cmd)
+    choice = _get_user_choice()
+    if not choice:
+        return
+    
+    try:
+        pick = int(choice)
+    except ValueError:
+        print("无效输入")
+        return
+    
+    match = next(((i, c, p) for (i, c, p) in available if i == pick), None)
+    if not match:
+        print(f"未找到序号 {pick}")
+        return
+    
+    _open_selected_file(match, editor_command)
+
+
+def _get_user_choice() -> Optional[str]:
+    """Get user input choice."""
+    print("\n请选择 (回车=0): ", end="", flush=True)
+    
+    try:
+        choice = input().strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\n已取消")
+        return None
+    
+    if choice.lower() in CANCEL_COMMANDS:
+        print("已取消")
+        return None
+    
+    return choice or DEFAULT_CHOICE
+
+
+def _open_selected_file(match: Tuple[int, str, Optional[str]], 
+                       editor_command: Optional[str]) -> None:
+    """Open the selected file."""
+    _, class_name, path = match
+    editor_cmd = parse_editor_command(editor_command)
+    print(f"正在打开: {class_name}")
+    open_file(path or "", editor_cmd)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Main CLI entry point."""
-    parser = setup_argument_parser()
-    args = parser.parse_args(argv)
-    
-    # Parse arguments
-    adb = args.adb
-    device = validate_device(adb, args.device)
-    search_roots = [p for p in (args.search_roots.split(",") if args.search_roots else [os.getcwd()]) if p]
-    
     try:
-        # Get current activity
-        activity_component = get_current_activity(adb, device)
+        args = _parse_arguments(argv)
+        device = validate_device(args.adb, args.device)
+        search_roots = _parse_search_roots(args.search_roots)
+        
+        # 获取当前 Activity 和 Fragments
+        activity_component = get_current_activity(args.adb, device)
         activity_name = get_activity_name(activity_component)
+        fragment_names = find_fragments_for_activity(args.adb, device, activity_component)
         
-        # Find fragments
-        fragment_names = find_fragments_for_activity(adb, device, activity_component)
-        
-        # Map to source files
+        # 查找源码文件
         activity_files = find_source_files([activity_name], search_roots)
         fragment_files = find_source_files(fragment_names, search_roots) if fragment_names else []
         
-        # Display results
+        # 显示结果
         activity_path = activity_files[0][1] if activity_files else None
         indexed = display_results(activity_name, activity_path, fragment_files)
         
-        # Handle file opening
+        # 处理文件打开
         handle_file_opening(indexed, args.open_all, args.open, args.editor)
         
         return 0
         
     except Exception as e:
-        print(f"[错误] {e}", file=sys.stderr)
+        _print_error(str(e))
         return 1
+
+
+def _parse_arguments(argv: Optional[Sequence[str]]) -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = setup_argument_parser()
+    return parser.parse_args(argv)
+
+
+def _parse_search_roots(search_roots: Optional[str]) -> List[str]:
+    """Parse search roots from comma-separated string."""
+    if not search_roots:
+        return [os.getcwd()]
+    return [p.strip() for p in search_roots.split(",") if p.strip()]
 
 
 def cli() -> None:

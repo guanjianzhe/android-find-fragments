@@ -6,6 +6,17 @@ from typing import Iterable, List, Optional, Tuple
 from .constants import SKIP_DIRECTORIES
 
 
+def _normalize_path(path: str) -> str:
+    """Convert absolute path to user-friendly path using ~ if possible."""
+    if not path:
+        return path
+    
+    home_dir = os.path.expanduser("~")
+    if path.startswith(home_dir):
+        return path.replace(home_dir, "~", 1)
+    return path
+
+
 def find_source_files(classnames: Iterable[str], search_roots: List[str]) -> List[Tuple[str, Optional[str]]]:
     """Search for Kotlin/Java files matching class names in the given roots.
     
@@ -31,7 +42,8 @@ def find_source_files(classnames: Iterable[str], search_roots: List[str]) -> Lis
                 if filename in wanted_files:
                     class_name = filename.rsplit(".", 1)[0]
                     if targets.get(class_name) is None:
-                        targets[class_name] = os.path.abspath(os.path.join(dirpath, filename))
+                        full_path = os.path.abspath(os.path.join(dirpath, filename))
+                        targets[class_name] = _normalize_path(full_path)
             
             # Stop searching once all classes are resolved
             if all(v is not None for v in targets.values()):
