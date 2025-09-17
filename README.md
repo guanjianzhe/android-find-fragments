@@ -69,17 +69,20 @@ acf --editor "code" --open
 
 启用命令自动补全：
 
-**Bash:**
 ```bash
+# 安装依赖
+pip install argcomplete
+
+# Bash 配置
 register-python-argcomplete acf >> ~/.bashrc && source ~/.bashrc
+
+# Zsh 配置
+echo 'if command -v register-python-argcomplete >/dev/null 2>&1; then
+    eval "$(register-python-argcomplete acf)"
+fi' >> ~/.zshrc && source ~/.zshrc
 ```
 
-**Zsh:**
-```bash
-# 在 ~/.zshrc 中添加
-eval "$(register-python-argcomplete acf)"
-source ~/.zshrc
-```
+测试：输入 `acf <TAB>` 或 `acf --<TAB>` 查看补全效果。
 
 ## 测试
 
