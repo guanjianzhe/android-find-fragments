@@ -7,8 +7,9 @@
 - **精确解析**：准确识别当前 Activity 的 Fragment，避免其他 Activity 的干扰
 - **快速定位**：自动搜索本地源码文件，支持 Kotlin 和 Java
 - **灵活配置**：支持多设备、自定义搜索路径、编辑器选择
-- **广泛兼容**：支持 Android 7-14，适配各种 OEM 变体
+- **广泛兼容**：支持 Android 11-15，自动适配不同版本的 dumpsys 格式
 - **简洁易用**：KISS 设计原则，一键或交互式打开文件
+- **调试支持**：内置详细调试模式和多设备测试工具
 
 ## 快速开始
 
@@ -92,6 +93,8 @@ fi' >> ~/.zshrc && source ~/.zshrc
 
 ## 测试
 
+### 单元测试
+
 运行测试套件：
 
 ```bash
@@ -104,6 +107,37 @@ python -m pytest tools/tests/test_parsers.py -v
 # 使用 unittest
 python -m unittest tools.tests.test_parsers -v
 ```
+
+### 多设备兼容性测试
+
+测试所有连接的设备：
+
+```bash
+# 运行多设备测试
+python -m tools.test_devices
+
+# 测试特定设备
+acf --device <device_id> --verbose
+```
+
+### 调试模式
+
+使用详细调试信息：
+
+```bash
+# 显示详细调试信息
+acf --verbose
+
+# 调试特定设备
+acf --device <device_id> --verbose
+```
+
+### 版本兼容性
+
+支持的 Android 版本：
+- **Android 11**: 使用 `mResumedActivity` 解析
+- **Android 12-15**: 使用 `topResumedActivity` 解析
+- **Fragment 格式**: 自动适配 `#0:` 和 `#0` 两种格式
 
 ## 项目结构
 
@@ -118,6 +152,7 @@ tools/
 ├── fragment_finder.py  # Fragment 查找器
 ├── constants.py        # 常量定义
 ├── test_data.py        # 测试数据
+├── test_devices.py     # 多设备测试工具
 └── tests/              # 测试模块
     └── test_parsers.py # 解析器测试
 ```

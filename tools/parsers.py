@@ -7,18 +7,46 @@ from .constants import ACTIVITY_KEYS, FRAGMENT_ANCHORS, FRAGMENT_STOPPERS, SYSTE
 
 
 def parse_activity_component(dumpsys_text: str, prefer_top: bool = True) -> str:
-    """Parse current activity component from dumpsys activities output."""
+    """Parse current activity component from dumpsys activities output.
+    
+    Args:
+        dumpsys_text: Raw dumpsys activities output
+        prefer_top: If True, prefer topResumedActivity (Android 12+), 
+                   otherwise prefer mResumedActivity (Android 11 and below)
+    
+    Returns:
+        Activity component string in format "package/activity"
+        
+    Raises:
+        RuntimeError: If no valid activity component is found
+    """
     keys = ACTIVITY_KEYS if prefer_top else list(reversed(ACTIVITY_KEYS))
     
-    for line in dumpsys_text.splitlines():
-        for key in keys:
+    # Try each key in order of preference
+    for key in keys:
+        for line in dumpsys_text.splitlines():
             if key in line:
-                # Match lines like "topResumedActivity: com.foo/.MainActivity"
+                # Match various formats:
+                # "topResumedActivity: com.foo/.MainActivity"
+                # "mResumedActivity: ActivityRecord{... com.foo/.MainActivity ...}"
+                # "topResumedActivity=ActivityRecord{... com.foo/.MainActivity ...}"
                 match = re.search(r"([A-Za-z0-9_$.]+)/([A-Za-z0-9_$.]+)", line)
                 if match:
-                    return f"{match.group(1)}/{match.group(2)}"
+                    component = f"{match.group(1)}/{match.group(2)}"
+                    # Validate component format
+                    if len(component.split("/")) == 2 and "." in component:
+                        return component
     
-    raise RuntimeError("未在 dumpsys 中找到当前 Activity（mResumedActivity/topResumedActivity）。")
+    # If no match found, provide detailed error message
+    found_keys = []
+    for key in ACTIVITY_KEYS:
+        if key in dumpsys_text:
+            found_keys.append(key)
+    
+    if found_keys:
+        raise RuntimeError(f"在 dumpsys 中找到键 {found_keys}，但无法解析有效的 Activity 组件。")
+    else:
+        raise RuntimeError("未在 dumpsys 中找到当前 Activity（mResumedActivity/topResumedActivity）。")
 
 
 def parse_fragments(dumpsys_text: str, package_hint: Optional[str] = None) -> List[str]:
@@ -86,10 +114,20 @@ def parse_fragments(dumpsys_text: str, package_hint: Optional[str] = None) -> Li
 def parse_fragments_strict(dumpsys_text: str, component: str, package_hint: str) -> List[str]:
     """Parse fragments with strict filtering to avoid other activities' fragments.
     
-    This implementation is based on the external plugin's approach:
+    This implementation is based on the external plugin's approach and enhanced for
+    better version compatibility across Android 11-15:
     1. Parse lines in reverse order to find the most recent activity
     2. Use a flag-based approach to ensure we only parse fragments from the current activity
     3. Filter out system fragments and invalid names
+    4. Handle various fragment line formats across Android versions
+    
+    Args:
+        dumpsys_text: Raw dumpsys activity output
+        component: Activity component (for logging/debugging)
+        package_hint: Package name hint (for filtering)
+        
+    Returns:
+        List of fragment class names
     """
     lines = dumpsys_text.splitlines()
     fragments = []
@@ -102,11 +140,15 @@ def parse_fragments_strict(dumpsys_text: str, component: str, package_hint: str)
         # If we're in fragment parsing mode (flag >= 1)
         if flag >= 1:
             # Check for lines starting with # followed by digits (fragment entries)
+            # Support various formats:
+            # "#0: FragmentName{hash}" (Android 12+)
+            # "#0 FragmentName{hash}" (Android 11)
+            # "#0: com.package.FragmentName{hash}" (full class name)
             if (line_stripped.startswith("#") and 
                 line_stripped[1:].strip() and
                 line_stripped[1:].strip()[0].isdigit()):
                 
-                # Extract fragment name from line like "#0: com.example.Fragment{123456}"
+                # Extract fragment name from line
                 fragment_name = _extract_fragment_name_from_line(line_stripped)
                 if fragment_name and fragment_name not in fragments:
                     fragments.append(fragment_name)

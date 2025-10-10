@@ -77,6 +77,13 @@ def setup_argument_parser() -> argparse.ArgumentParser:
         default=None
     )
     
+    # 调试参数
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="显示详细的调试信息"
+    )
+    
     # 启用自动补全
     _enable_autocomplete(parser)
     
@@ -243,19 +250,38 @@ def _open_selected_file(match: Tuple[int, str, Optional[str]],
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Main CLI entry point."""
+    args = None
     try:
         args = _parse_arguments(argv)
         device = validate_device(args.adb, args.device)
         search_roots = _parse_search_roots(args.search_roots)
+        
+        # 显示调试信息
+        if args.verbose:
+            print(f"[调试] 使用设备: {device}")
+            print(f"[调试] 搜索根目录: {search_roots}")
+            android_version = get_android_version(args.adb, device)
+            print(f"[调试] Android 版本: {android_version}")
         
         # 获取当前 Activity 和 Fragments
         activity_component = get_current_activity(args.adb, device)
         activity_name = get_activity_name(activity_component)
         fragment_names = find_fragments_for_activity(args.adb, device, activity_component)
         
+        if args.verbose:
+            print(f"[调试] Activity 组件: {activity_component}")
+            print(f"[调试] Activity 名称: {activity_name}")
+            print(f"[调试] Fragment 数量: {len(fragment_names) if fragment_names else 0}")
+            if fragment_names:
+                print(f"[调试] Fragment 列表: {fragment_names}")
+        
         # 查找源码文件
         activity_files = find_source_files([activity_name], search_roots)
         fragment_files = find_source_files(fragment_names, search_roots) if fragment_names else []
+        
+        if args.verbose:
+            print(f"[调试] 找到的 Activity 文件: {len(activity_files)}")
+            print(f"[调试] 找到的 Fragment 文件: {len(fragment_files)}")
         
         # 显示结果
         activity_path = activity_files[0][1] if activity_files else None
@@ -268,6 +294,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         
     except Exception as e:
         _print_error(str(e))
+        if args and args.verbose:
+            import traceback
+            print(f"[调试] 详细错误信息:\n{traceback.format_exc()}")
         return 1
 
 

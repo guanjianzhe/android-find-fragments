@@ -44,7 +44,28 @@ pytest tools/tests/test_parsers.py -v
 
 # 运行并显示覆盖率
 pytest --cov=tools
+
+# 多设备兼容性测试
+python -m tools.test_devices
+
+# 调试模式测试
+acf --verbose --device <device_id>
 ```
+
+### 版本兼容性测试
+
+项目支持 Android 11-15，关键变化：
+
+- **Android 11**: 使用 `mResumedActivity` 键
+- **Android 12+**: 切换到 `topResumedActivity` 键  
+- **Fragment 格式**: 支持 `#0:` 和 `#0` 两种格式
+- **自动适配**: 解析器自动检测版本并使用相应策略
+
+多设备测试工具验证：
+- 设备连接状态
+- Android 版本检测
+- dumpsys 格式兼容性
+- Activity 和 Fragment 解析功能
 
 ## 代码规范
 
