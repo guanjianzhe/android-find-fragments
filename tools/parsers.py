@@ -114,12 +114,12 @@ def parse_fragments(dumpsys_text: str, package_hint: Optional[str] = None) -> Li
 def parse_fragments_strict(dumpsys_text: str, component: str, package_hint: str) -> List[str]:
     """Parse fragments with strict filtering to avoid other activities' fragments.
     
-    This implementation is based on the external plugin's approach and enhanced for
-    better version compatibility across Android 11-15:
-    1. Parse lines in reverse order to find the most recent activity
-    2. Use a flag-based approach to ensure we only parse fragments from the current activity
-    3. Filter out system fragments and invalid names
-    4. Handle various fragment line formats across Android versions
+    This implementation finds "Added Fragments:" section for the specified component:
+    1. Look for the component/activity in dumpsys output
+    2. Find the next "Added Fragments:" marker after that activity
+    3. Parse fragments from that section only
+    4. Filter out system fragments and invalid names
+    5. Handle various fragment line formats across Android versions
     
     Args:
         dumpsys_text: Raw dumpsys activity output
@@ -131,45 +131,68 @@ def parse_fragments_strict(dumpsys_text: str, component: str, package_hint: str)
     """
     lines = dumpsys_text.splitlines()
     fragments = []
-    flag = 0
     
-    # Parse lines in reverse order (like the external plugin)
-    for line in reversed(lines):
-        line_stripped = line.strip()
-        
-        # If we're in fragment parsing mode (flag >= 1)
-        if flag >= 1:
-            # Check for lines starting with # followed by digits (fragment entries)
-            # Support various formats:
-            # "#0: FragmentName{hash}" (Android 12+)
-            # "#0 FragmentName{hash}" (Android 11)
-            # "#0: com.package.FragmentName{hash}" (full class name)
-            if (line_stripped.startswith("#") and 
-                line_stripped[1:].strip() and
-                line_stripped[1:].strip()[0].isdigit()):
-                
-                # Extract fragment name from line
-                fragment_name = _extract_fragment_name_from_line(line_stripped)
-                if fragment_name and fragment_name not in fragments:
-                    fragments.append(fragment_name)
-                    flag = 1  # Found at least one fragment
-            
-            # Stop parsing if we hit a stopper (and we've found at least one fragment marker)
-            elif any(line_stripped.startswith(stop) for stop in FRAGMENT_STOPPERS):
-                if flag == 1:  # We found fragments, stop here
-                    break
-        
-        # Check for fragment section markers
-        if line_stripped.startswith("Added Fragments:"):
-            if flag == 0:
-                flag = 2  # Mark that we found "Added Fragments:" but no fragments yet
-            elif flag == 1:
-                # We already found fragments, this is from another activity, stop
+    # Extract package and activity name from component
+    # Component format: com.example.app/.ui.MainActivity
+    activity_name = component.split("/")[-1].lstrip(".")
+    
+    # Find the activity line and the next "Added Fragments:" marker
+    activity_found_idx = -1
+    for i, line in enumerate(lines):
+        # Look for the activity line (contains the component or activity name)
+        if component in line or activity_name in line:
+            if "Activity" in line or "ACTIVITY" in line:
+                activity_found_idx = i
                 break
     
-    # Filter out system fragments and reverse (since we parsed in reverse order)
+    # If activity not found, fall back to last "Added Fragments:"
+    if activity_found_idx == -1:
+        # Find the last "Added Fragments:" marker
+        for i, line in enumerate(lines):
+            if line.strip().startswith("Added Fragments:"):
+                activity_found_idx = i - 1
+    
+    # Find the LAST "Added Fragments:" marker after the activity
+    # but before the next Activity line (to avoid other activities' fragments)
+    fragment_marker_idx = -1
+    for i in range(activity_found_idx + 1, len(lines)):
+        line_stripped = lines[i].strip()
+        
+        # Stop if we hit another Activity line
+        if "Activity #" in line_stripped or "ACTIVITY" in line_stripped:
+            if i > activity_found_idx + 1:  # Make sure it's not the same activity
+                break
+        
+        # Found a fragment marker
+        if line_stripped.startswith("Added Fragments:"):
+            fragment_marker_idx = i
+            # Don't break, keep looking for more sections (for nested fragments)
+    
+    # If no marker found, return empty list
+    if fragment_marker_idx == -1:
+        return []
+    
+    # Parse fragments starting from the marker
+    for i in range(fragment_marker_idx + 1, len(lines)):
+        line_stripped = lines[i].strip()
+        
+        # Stop if we hit a stopper
+        if any(line_stripped.startswith(stop) for stop in FRAGMENT_STOPPERS):
+            break
+        
+        # Check for fragment entries
+        if (line_stripped.startswith("#") and 
+            line_stripped[1:].strip() and
+            line_stripped[1:].strip()[0].isdigit()):
+            
+            # Extract fragment name from line
+            fragment_name = _extract_fragment_name_from_line(line_stripped)
+            if fragment_name and fragment_name not in fragments:
+                fragments.append(fragment_name)
+    
+    # Filter out system fragments
     filtered = [f for f in fragments if f not in SYSTEM_FRAGMENTS and len(f) > 0]
-    return list(reversed(filtered))
+    return filtered
 
 
 def _extract_fragment_name_from_line(line: str) -> Optional[str]:
