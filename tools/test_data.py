@@ -71,3 +71,20 @@ Stack #0:
         #0 com.another.app.ui.AnotherFragment{222222}
       AutofillManager:
 """.strip()
+
+# Package-specific dumpsys sample (like external plugin uses)
+PACKAGE_DUMPSYS_SAMPLE = """
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity com.example.app)
+Stack #0:
+  Task #123:
+    Activity #2: com.example.app/.ui.MainActivity
+      Local Activity 2a60509 State:
+        mResumed=true mStopped=false mFinished=false
+        Added Fragments:
+          #0: HomeFragment{123456} (uuid tag=home)
+          #1: ProfileFragment{789abc} (uuid tag=profile)
+        FragmentManager misc state:
+          mHost=androidx.fragment.app.FragmentActivity$HostCallbacks@46e81a1
+          mContainer=androidx.fragment.app.FragmentActivity$HostCallbacks@46e81a1
+          mCurState=7 mStateSaved=false mStopped=false mDestroyed=false
+""".strip()

@@ -11,6 +11,7 @@ from tools.test_data import (
     FRAGMENTS_COMPLEX_SAMPLE,
     FRAGMENTS_SAMPLE,
     FULL_DUMPSYS_SAMPLE,
+    PACKAGE_DUMPSYS_SAMPLE,
 )
 
 
@@ -54,6 +55,16 @@ class TestParsers(unittest.TestCase):
         """Test parsing fragments without package hint."""
         frags = parse_fragments(FRAGMENTS_SAMPLE)
         self.assertEqual(frags, ["HomeFragment", "ChildFragment", "InfoDialogFragment"])
+
+    def test_parse_package_specific_dumpsys(self):
+        """Test parsing package-specific dumpsys format (like external plugin)."""
+        frags = parse_fragments_strict(
+            PACKAGE_DUMPSYS_SAMPLE,
+            "com.example.app/.ui.MainActivity",
+            "com.example.app"
+        )
+        # Should parse fragments from package-specific dumpsys
+        self.assertEqual(frags, ["HomeFragment", "ProfileFragment"])
 
     def test_parse_fragments_strict_filtering(self):
         """Test that strict filtering only returns fragments for the specific activity."""

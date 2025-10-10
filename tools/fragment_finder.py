@@ -2,8 +2,38 @@
 
 from typing import List, Optional
 
-from .adb_client import get_activity_dump, get_android_version, get_package_dump
+from .adb_client import get_activity_dump, get_android_version, get_package_dump, get_current_activity_fast
 from .parsers import parse_fragments, parse_fragments_strict
+
+
+def find_fragments_for_activity_optimized(adb: str, device: Optional[str], component: str) -> List[str]:
+    """Find fragments for a specific activity component using optimized approach.
+    
+    Uses package-specific dumpsys for faster parsing (like external plugin).
+    Falls back to original method if optimization fails.
+    
+    Args:
+        adb: Path to adb executable
+        device: Optional device serial number
+        component: Activity component (package/activity)
+        
+    Returns:
+        List of fragment class names
+    """
+    package = component.split("/", 1)[0]
+    
+    # Optimized approach: use package-specific dumpsys (faster, like external plugin)
+    try:
+        dump = get_package_dump(adb, device, package)
+        if dump.strip():
+            fragments = parse_fragments_strict(dump, component, package)
+            if fragments:
+                return fragments
+    except Exception:
+        pass
+    
+    # Fallback to original method if optimization fails
+    return find_fragments_for_activity(adb, device, component)
 
 
 def find_fragments_for_activity(adb: str, device: Optional[str], component: str) -> List[str]:

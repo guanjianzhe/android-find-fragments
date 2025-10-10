@@ -22,18 +22,18 @@ except ImportError:
     argcomplete = None  # type: ignore
 
 try:
-    from .adb_client import get_android_version, get_connected_devices, get_activities_dump
+    from .adb_client import get_android_version, get_connected_devices, get_activities_dump, get_current_activity_fast
     from .file_finder import find_source_files, get_activity_name
     from .file_opener import open_file, parse_editor_command
-    from .fragment_finder import find_fragments_for_activity
+    from .fragment_finder import find_fragments_for_activity, find_fragments_for_activity_optimized
     from .parsers import parse_activity_component
 except ImportError:
     # Fallback for direct execution
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from tools.adb_client import get_android_version, get_connected_devices, get_activities_dump
+    from tools.adb_client import get_android_version, get_connected_devices, get_activities_dump, get_current_activity_fast
     from tools.file_finder import find_source_files, get_activity_name
     from tools.file_opener import open_file, parse_editor_command
-    from tools.fragment_finder import find_fragments_for_activity
+    from tools.fragment_finder import find_fragments_for_activity, find_fragments_for_activity_optimized
     from tools.parsers import parse_activity_component
 
 
@@ -138,6 +138,19 @@ def get_current_activity(adb: str, device: str) -> str:
     version = get_android_version(adb, device)
     activities_dump = get_activities_dump(adb, device)
     return parse_activity_component(activities_dump, prefer_top=((version or 0) >= 12))
+
+
+def get_current_activity_optimized(adb: str, device: str) -> str:
+    """Get current activity component using optimized approach (shell grep)."""
+    version = get_android_version(adb, device)
+    if version:
+        # Try optimized approach first
+        component = get_current_activity_fast(adb, device, version)
+        if component:
+            return component
+    
+    # Fallback to original method
+    return get_current_activity(adb, device)
 
 
 def display_results(activity_name: str, activity_path: Optional[str], 
@@ -263,10 +276,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             android_version = get_android_version(args.adb, device)
             print(f"[调试] Android 版本: {android_version}")
         
-        # 获取当前 Activity 和 Fragments
-        activity_component = get_current_activity(args.adb, device)
+        # 获取当前 Activity 和 Fragments (使用优化方法)
+        activity_component = get_current_activity_optimized(args.adb, device)
         activity_name = get_activity_name(activity_component)
-        fragment_names = find_fragments_for_activity(args.adb, device, activity_component)
+        fragment_names = find_fragments_for_activity_optimized(args.adb, device, activity_component)
         
         if args.verbose:
             print(f"[调试] Activity 组件: {activity_component}")

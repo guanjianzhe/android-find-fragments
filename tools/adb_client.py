@@ -57,3 +57,41 @@ def get_activity_dump(adb: str, device: Optional[str], component: str) -> str:
 def get_package_dump(adb: str, device: Optional[str], package: str) -> str:
     """Get package dump from device."""
     return run_command(build_adb_command(adb, device, ["shell", "dumpsys", "activity", package]))
+
+
+def get_current_activity_fast(adb: str, device: Optional[str], android_version: int) -> str:
+    """Fast activity lookup using shell grep (like external plugin).
+    
+    Args:
+        adb: ADB executable path
+        device: Device serial number
+        android_version: Android version number for choosing grep keyword
+        
+    Returns:
+        Activity component string (e.g., "com.example.app/.MainActivity")
+    """
+    keyword = "topResumedActivity" if android_version >= 12 else "mResumedActivity"
+    
+    # Use shell command with grep for fast filtering
+    cmd = build_adb_command(adb, device, ["shell", "dumpsys", "activity", "activities"])
+    cmd_str = " ".join(cmd) + f" | grep {keyword}"
+    
+    try:
+        # Execute shell command with grep
+        result = subprocess.check_output(cmd_str, shell=True, stderr=subprocess.STDOUT, timeout=30)
+        output = result.decode(errors="ignore").strip()
+        
+        if not output:
+            return ""
+        
+        # Extract component from grep output
+        # Format: "    mResumedActivity: ActivityRecord{... com.example.app/.MainActivity ...}"
+        # or: "    topResumedActivity=ActivityRecord{... com.example.app/.MainActivity ...}"
+        match = re.search(r"([A-Za-z0-9_$.]+)/([A-Za-z0-9_$.]+)", output)
+        if match:
+            return f"{match.group(1)}/{match.group(2)}"
+        
+        return ""
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, Exception):
+        # Fallback to empty string if grep fails
+        return ""
