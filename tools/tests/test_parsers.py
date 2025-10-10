@@ -3,7 +3,7 @@
 import unittest
 
 from tools.parsers import parse_activity_component, parse_fragments, parse_fragments_strict
-from tools.test_data import (
+from .test_data import (
     ANDROID11_SAMPLE,
     ANDROID14_SAMPLE,
     FRAGMENTS_ACTIVE_SAMPLE,

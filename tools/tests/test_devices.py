@@ -3,14 +3,25 @@
 Multi-device testing script for ACF tool across different Android versions.
 """
 
+import os
 import sys
 import time
 from typing import Dict, List, Optional, Tuple
 
-from .adb_client import get_android_version, get_connected_devices, get_activities_dump, get_activity_dump
-from .file_finder import get_activity_name
-from .fragment_finder import find_fragments_for_activity
-from .parsers import parse_activity_component
+# Handle imports for both direct execution and module execution
+try:
+    # Try relative imports first (when run as module)
+    from ..adb_client import get_android_version, get_connected_devices, get_activities_dump, get_current_activity_fast
+    from ..file_finder import get_activity_name
+    from ..fragment_finder import find_fragments_for_activity, find_fragments_for_activity_optimized
+    from ..parsers import parse_activity_component
+except ImportError:
+    # Fall back to absolute imports (when run directly)
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    from tools.adb_client import get_android_version, get_connected_devices, get_activities_dump, get_current_activity_fast
+    from tools.file_finder import get_activity_name
+    from tools.fragment_finder import find_fragments_for_activity, find_fragments_for_activity_optimized
+    from tools.parsers import parse_activity_component
 
 
 class DeviceTestResult:
@@ -42,7 +53,11 @@ class DeviceTestResult:
 def test_device_connection(device_id: str) -> Tuple[bool, str]:
     """Test basic device connection."""
     try:
-        from .adb_client import run_command, build_adb_command
+        # Import at function level to ensure proper loading
+        try:
+            from ..adb_client import run_command, build_adb_command
+        except ImportError:
+            from tools.adb_client import run_command, build_adb_command
         result = run_command(build_adb_command("adb", device_id, ["shell", "echo", "test"]))
         if "test" in result:
             return True, "Device connection successful"
@@ -95,6 +110,23 @@ def test_fragment_parsing(device_id: str, android_version: int) -> Tuple[bool, s
             return False, f"Fragment parsing returned invalid result: {type(fragments)}"
     except Exception as e:
         return False, f"Fragment parsing failed: {str(e)}"
+
+
+def test_optimized_parsing(device_id: str, android_version: int) -> Tuple[bool, str]:
+    """Test optimized parsing functionality (fast activity lookup + package-specific dumpsys)."""
+    try:
+        # Test fast activity lookup
+        activity_component = get_current_activity_fast("adb", device_id, android_version)
+        
+        if not activity_component:
+            return False, "Fast activity lookup failed"
+        
+        # Test optimized fragment parsing
+        fragments = find_fragments_for_activity_optimized("adb", device_id, activity_component)
+        
+        return True, f"Optimized parsing successful: {len(fragments)} fragments found"
+    except Exception as e:
+        return False, f"Optimized parsing failed: {str(e)}"
 
 
 def test_dumpsys_format_compatibility(device_id: str, android_version: int) -> Tuple[bool, str]:
@@ -163,6 +195,14 @@ def run_device_tests(device_id: str) -> DeviceTestResult:
     result.add_test("Fragment Parsing", success, details)
     if not success:
         print(f"❌ Fragment parsing failed: {details}")
+    else:
+        print(f"✅ {details}")
+    
+    # Test 6: Optimized parsing
+    success, details = test_optimized_parsing(device_id, version)
+    result.add_test("Optimized Parsing", success, details)
+    if not success:
+        print(f"❌ Optimized parsing failed: {details}")
     else:
         print(f"✅ {details}")
     
