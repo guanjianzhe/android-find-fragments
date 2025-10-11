@@ -139,11 +139,12 @@ def parse_fragments_strict(dumpsys_text: str, component: str, package_hint: str)
     # Find the activity line and the next "Added Fragments:" marker
     activity_found_idx = -1
     for i, line in enumerate(lines):
-        # Look for the activity line (contains the component or activity name)
-        if component in line or activity_name in line:
-            if "Activity" in line or "ACTIVITY" in line:
-                activity_found_idx = i
-                break
+        # Look for the activity line (must start with "ACTIVITY" and contain the component)
+        line_stripped = line.strip()
+        if (line_stripped.startswith("ACTIVITY") and 
+            component in line_stripped):
+            activity_found_idx = i
+            break
     
     # If activity not found, fall back to last "Added Fragments:"
     if activity_found_idx == -1:
@@ -152,7 +153,7 @@ def parse_fragments_strict(dumpsys_text: str, component: str, package_hint: str)
             if line.strip().startswith("Added Fragments:"):
                 activity_found_idx = i - 1
     
-    # Find the LAST "Added Fragments:" marker after the activity
+    # Find the LAST "Added Fragments:" or "Active Fragments" marker after the activity
     # but before the next Activity line (to avoid other activities' fragments)
     fragment_marker_idx = -1
     for i in range(activity_found_idx + 1, len(lines)):
@@ -163,8 +164,9 @@ def parse_fragments_strict(dumpsys_text: str, component: str, package_hint: str)
             if i > activity_found_idx + 1:  # Make sure it's not the same activity
                 break
         
-        # Found a fragment marker
-        if line_stripped.startswith("Added Fragments:"):
+        # Found a fragment marker (Added Fragments or Active Fragments)
+        if (line_stripped.startswith("Added Fragments:") or 
+            line_stripped.startswith("Active Fragments")):
             fragment_marker_idx = i
             # Don't break, keep looking for more sections (for nested fragments)
     
@@ -180,7 +182,7 @@ def parse_fragments_strict(dumpsys_text: str, component: str, package_hint: str)
         if any(line_stripped.startswith(stop) for stop in FRAGMENT_STOPPERS):
             break
         
-        # Check for fragment entries
+        # Check for fragment entries (both Added Fragments and Active Fragments formats)
         if (line_stripped.startswith("#") and 
             line_stripped[1:].strip() and
             line_stripped[1:].strip()[0].isdigit()):

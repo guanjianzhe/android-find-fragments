@@ -50,6 +50,15 @@ acf --editor "/Applications/Android Studio.app" --open
 
 # 使用 IntelliJ IDEA 打开
 acf --editor "/Applications/IntelliJ IDEA.app" --open
+
+# 实时监控模式（自动检测变化）
+acf --watch
+
+# 实时监控模式 + 详细调试信息
+acf --watch --verbose
+
+# 指定设备进行监控
+acf --watch --device emulator-5554
 ```
 
 ## 详细用法
@@ -64,6 +73,8 @@ acf --editor "/Applications/IntelliJ IDEA.app" --open
 | `--open` | 交互式选择并打开文件 | - |
 | `--open-all` | 打开所有找到的文件 | - |
 | `--editor` | 自定义编辑器命令（如：`code`、`/Applications/Android Studio.app`） | 系统默认 |
+| `--watch`, `-w` | 实时监控模式，自动检测 Activity 和 Fragment 变化 | - |
+| `--verbose`, `-v` | 显示详细的调试信息 | - |
 
 ### 环境要求
 
@@ -90,6 +101,45 @@ fi' >> ~/.zshrc && source ~/.zshrc
 ```
 
 测试：输入 `acf <TAB>` 或 `acf --<TAB>` 查看补全效果。
+
+### 实时监控模式
+
+实时监控模式可以自动检测 Activity 和 Fragment 的变化，非常适合开发调试：
+
+```bash
+# 启动实时监控
+acf --watch
+
+# 带调试信息的实时监控
+acf --watch --verbose
+
+# 指定设备进行监控
+acf --watch --device emulator-5554
+```
+
+**特性**：
+- 每2秒自动检查一次变化
+- 极简风格显示，只显示时:分:秒
+- 累积显示所有变化历史
+- 支持按 `q` 键或 `Ctrl+C` 退出
+- 跨平台兼容（Windows/macOS/Linux）
+
+**输出示例**：
+```
+实时监控模式已启动，按 q 或 Ctrl+C 退出
+每2秒检查一次变化...
+
+→ 14:30:15  MainActivity
+  • HomeFragment
+
+→ 14:30:22  DetailActivity
+  • DetailFragment
+```
+
+**使用场景**：
+- 开发时监控应用状态变化
+- 调试 Fragment 生命周期
+- 验证 Activity 切换逻辑
 
 ## 测试
 

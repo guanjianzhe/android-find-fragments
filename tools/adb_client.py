@@ -37,6 +37,52 @@ def get_connected_devices(adb: str) -> List[str]:
     return devices
 
 
+def get_device_info(adb: str, device: str) -> dict:
+    """Get detailed device information.
+    
+    Args:
+        adb: ADB executable path
+        device: Device serial number
+        
+    Returns:
+        Dictionary with device information
+    """
+    info = {
+        "serial": device,
+        "model": "Unknown",
+        "manufacturer": "Unknown", 
+        "android_version": "Unknown",
+        "api_level": "Unknown"
+    }
+    
+    try:
+        # Get device model
+        model = run_command(build_adb_command(adb, device, ["shell", "getprop", "ro.product.model"]))
+        if model.strip():
+            info["model"] = model.strip()
+        
+        # Get manufacturer
+        manufacturer = run_command(build_adb_command(adb, device, ["shell", "getprop", "ro.product.manufacturer"]))
+        if manufacturer.strip():
+            info["manufacturer"] = manufacturer.strip()
+        
+        # Get Android version
+        android_version = run_command(build_adb_command(adb, device, ["shell", "getprop", "ro.build.version.release"]))
+        if android_version.strip():
+            info["android_version"] = android_version.strip()
+        
+        # Get API level
+        api_level = run_command(build_adb_command(adb, device, ["shell", "getprop", "ro.build.version.sdk"]))
+        if api_level.strip():
+            info["api_level"] = api_level.strip()
+            
+    except Exception:
+        # If any property fails, keep defaults
+        pass
+    
+    return info
+
+
 def get_android_version(adb: str, device: Optional[str]) -> Optional[int]:
     """Get Android version from device."""
     out = run_command(build_adb_command(adb, device, ["shell", "getprop", "ro.build.version.release"]))

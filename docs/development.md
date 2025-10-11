@@ -50,6 +50,9 @@ python -m tools.test_devices
 
 # 调试模式测试
 acf --verbose --device <device_id>
+
+# 实时监控模式测试
+acf --watch --verbose --device <device_id>
 ```
 
 ### 版本兼容性测试
@@ -155,6 +158,75 @@ def test_filter_system_fragments(self):
 - 跳过构建目录和 VCS 目录
 - 使用早期退出策略
 - 缓存搜索结果
+
+## 实时监控模式
+
+### 实现原理
+
+实时监控模式通过以下机制实现：
+
+1. **状态跟踪**: 使用 `State = Tuple[str, List[str]]` 表示当前状态
+2. **轮询检测**: 每2秒检查一次 Activity 和 Fragment 变化
+3. **变化检测**: 通过 `compare_states()` 比较前后状态
+4. **累积显示**: 变化时添加时间戳和分隔符，不清屏
+5. **跨平台退出**: 支持 `q` 键和 `Ctrl+C` 退出
+
+### 核心函数
+
+```python
+def watch_mode(adb: str, device: str, search_roots: List[str], verbose: bool) -> None:
+    """实时监控模式主循环"""
+    # 设置信号处理器
+    signal.signal(signal.SIGINT, handle_watch_interrupt)
+    
+    previous_state = None
+    while True:
+        current_state = get_current_state(adb, device)
+        if not compare_states(current_state, previous_state):
+            # 显示时间戳（只显示时:分:秒）
+            timestamp = datetime.now().strftime('%H:%M:%S')
+            print(f"\n→ {timestamp}  {activity_name}")
+            
+            # 显示 Fragments
+            if fragment_names:
+                for name in fragment_names:
+                    print(f"  • {name}")
+            
+            display_results(...)
+            previous_state = current_state
+        
+        if check_quit_signal(WATCH_INTERVAL):
+            break
+```
+
+### 设计原则
+
+- **简洁性**: 移除不必要的文件打开功能，专注于监控
+- **可读性**: 使用极简风格，只显示时:分:秒，清晰标识每次变化
+- **可维护性**: 减少参数和分支，降低复杂度
+- **一致性**: 所有场景使用统一的符号和格式
+
+### 跨平台键盘检测
+
+```python
+def check_quit_signal(timeout: float) -> bool:
+    """跨平台退出信号检测"""
+    if HAS_SELECT and sys.stdin.isatty():
+        # Unix/macOS: 使用 select
+        ready, _, _ = select.select([sys.stdin], [], [], timeout)
+        if ready:
+            char = sys.stdin.read(1)
+            return char.lower() == 'q'
+    elif HAS_MSVCRT:
+        # Windows: 使用 msvcrt
+        if msvcrt.kbhit():
+            char = msvcrt.getch()
+            return char.lower() == 'q'
+    else:
+        # 降级方案
+        time.sleep(timeout)
+    return False
+```
 
 ## 调试技巧
 
