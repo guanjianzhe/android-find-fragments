@@ -197,6 +197,10 @@ acf --device <device_id> --verbose
 
 ## 项目结构
 
+- 技术方案与代码理解：查看 [docs/technical-plan.md](docs/technical-plan.md)
+- Android 源码格式分析：查看 [docs/android-source-analysis.md](docs/android-source-analysis.md)
+- 开发与测试指南：查看 [docs/development.md](docs/development.md)
+
 ## 开发
 
 ### 模块化设计
